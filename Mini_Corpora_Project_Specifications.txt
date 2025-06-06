@@ -1,0 +1,257 @@
+MINI CORPORA EXTRACTION PROJECT — SPECIFICATIONS FILE
+
+PROJECT DESCRIPTION
+-------------------
+The "Mini Corpora" project automates the extraction of OCR text from groups of PDFs exported from Zotero in RDF format. Each group corresponds to a "mini corpus"—a themed collection of articles (secondary sources) or primary documents (mainly from 1850–1920). The goal is to produce structured `.txt` files for each corpus, suitable for qualitative and quantitative textual analysis.
+
+The RDF export contains:
+- One `export.rdf` file with metadata
+- A folder containing one subfolder per item, each holding one or more PDFs
+
+The output consists of:
+1. One or more `.txt` corpus files with the extracted OCR text
+2. A `.txt` file collecting Zotero notes (with metadata)
+3. A `.csv` table of all items in the RDF with structured metadata
+4. A log of errors (`log_errors.txt`)
+
+TEXT CORPUS FILE STRUCTURE
+---------------------------
+Each `.txt` file begins with a README header and contains all OCR-extracted texts, separated by document delimiters and page markers. If the file exceeds 20MB, it is split into multiple parts.
+
+README HEADER FORMAT
+---------------------
+Each corpus `.txt` file begins with the following header:
+
+==== MINI CORPUS README ====
+Corpus name: [CorpusName]
+Date of export: [YYYY-MM-DD]
+Total number of articles in corpus: [X]
+Number of articles in this file: [Y]
+Document delimiter: ==== BEGIN DOCUMENT [n] ====
+Page separator: [pX] (or fallback if conflict detected)
+Statement: This file contains multiple OCR-extracted articles (secondary bibliography from historical and related disciplines) or other documents (primary sources mainly produced between 1850 and 1920).
+Source: Zotero RDF export
+============================
+
+DOCUMENT DELIMITER FORMAT
+--------------------------
+Each document begins with a metadata header:
+
+==== BEGIN DOCUMENT [n] ====
+Title: [Title]
+Author(s): [Author(s)]
+Date: [Year]
+Zotero Item Key: [Optional]
+Original filename: [filename.pdf]
+============================
+
+PAGE SEPARATOR FORMAT
+----------------------
+Default page separator: [pX] (e.g., [p1], [p2], ...)
+
+If a conflict is detected (i.e., the token [pX] already appears in the OCR text), a fallback separator will be chosen automatically (e.g., [[pX]] or --pX--). The actual separator used will be indicated in the README.
+
+MULTIPLE PDFs
+-------------
+Each PDF is treated as an individual document, even if multiple PDFs belong to the same Zotero item. This ensures clarity and traceability in downstream processing.
+
+NAMING CONVENTIONS
+-------------------
+- The corpus name is passed via command line and is used to name:
+  - The output folder
+  - All `.txt` and `.csv` files
+  - The "Corpus name" field in README headers
+
+Example structure:
+  /output/
+    /[CorpusName]/
+      ├── [CorpusName]_part1.txt
+      ├── [CorpusName]_notes.txt
+      ├── [CorpusName]_summary.csv
+      └── log_errors.txt
+
+ZOTERO NOTES FILE
+------------------
+The `[CorpusName]_notes.txt` file includes all Zotero notes found in the RDF, each preceded by basic metadata:
+
+==== NOTE ====
+Filename: [filename.pdf]
+Title: [Title]
+Author(s): [Author(s)]
+Date: [Year]
+-------------------
+[Note content]
+======================
+
+CSV SUMMARY FILE
+-----------------
+The `[CorpusName]_summary.csv` file includes one row per Zotero item with the following columns:
+
+- Zotero Item Key (if extractable)
+- Title
+- Author(s)
+- Year
+- Original filename(s)
+- Attachment present? (yes/no)
+- PDF present? (yes/no)
+- Included in corpus? (yes/no)
+- OCR percentage (optional)
+
+This file supports metadata auditing and corpus tracking.
+
+ERROR LOG
+----------
+The script will output a `log_errors.txt` containing:
+- PDFs that could not be processed
+- Parsing errors
+- Missing OCR content
+
+END OF SPECIFICATIONS
+
+
+
+
+ZOTERO RDF STRUCTURE — EXTRACTION GUIDELINES
+--------------------------------------------
+
+This document summarizes the full understanding of Zotero RDF exports, with the goal of enabling automatic metadata and PDF path extraction. It is designed as a reusable instruction set that ensures any future reimplementation of this project can proceed correctly and efficiently.
+
+1. STRUCTURE OF ZOTERO RDF EXPORT
+---------------------------------
+Zotero RDF exports contain multiple types of elements, each with distinct roles:
+- <bib:Article>, <bib:Book>, etc.: Main bibliographic entries (items). These are the main objects we extract.
+- <z:Attachment>: File attachments (PDFs) related to items. Located in folders named after their internal item ID (e.g., 'files/3599/...').
+- <bib:Memo>: Zotero notes. These are not treated as main items but are stored separately with their metadata context.
+- <bib:Journal>: Provides journal title and issue metadata. These are always adjacent to articles and not extracted independently.
+
+2. KEY NAMESPACES (used to interpret the tags correctly)
+--------------------------------------------------------
+- rdf:      http://www.w3.org/1999/02/22-rdf-syntax-ns#
+- z:        http://www.zotero.org/namespaces/export#
+- dc:       http://purl.org/dc/elements/1.1/
+- foaf:     http://xmlns.com/foaf/0.1/
+- bib:      http://purl.org/net/biblio#
+- dcterms:  http://purl.org/dc/terms/
+- prism:    http://prismstandard.org/namespaces/1.2/basic/
+- link:     http://purl.org/rss/1.0/modules/link/
+
+3. ITEM METADATA EXTRACTION RULES
+---------------------------------
+For each <bib:*> item (e.g. <bib:Article>, <bib:Book>), extract:
+
+- Item ID:         attribute rdf:about (remove '#' if present)
+- Title:           <dc:title>
+- Author:          <foaf:givenName> + <foaf:surname>
+- Year:            <dc:date>
+- Pages:           <bib:pages>
+- Journal title:   if present in <dcterms:isPartOf><bib:Journal><dc:title>
+- Issue number:    if present in <prism:number>
+
+4. ATTACHMENTS AND PDF PATHS
+----------------------------
+- Each item links to one or more attachments using:
+    <link:link rdf:resource="#item_XXXX"/>
+- Each corresponding <z:Attachment rdf:about="#item_XXXX"> contains:
+    <dc:title>: the filename (e.g., "Riguzzi, 1988 - México próspero.pdf")
+    <rdf:resource rdf:resource="files/XXXX/FILENAME.pdf"/>: the relative path to the PDF
+
+IMPORTANT:
+- The file path is not found in the text of <rdf:resource> but as an attribute named rdf:resource.
+- You must parse this attribute value from the <rdf:resource> tag inside the <z:Attachment> element.
+
+5. ZOTERO NOTES
+---------------
+- Items can contain a reference to a Zotero note:
+    <dcterms:isReferencedBy rdf:resource="#item_YYYY"/>
+- The note content is stored in <bib:Memo rdf:about="#item_YYYY">, with:
+    - <dc:description>: the full note content
+
+Notes are stored separately and paired with their parent item’s metadata (filename, title, author, year) for output in a second .txt file.
+
+6. FILESYSTEM ORGANIZATION
+--------------------------
+Each <z:Attachment> is stored in a subfolder named with its numeric ID:
+Example:
+- <z:Attachment rdf:about="#item_3599">
+  → file is located at files/3599/FILENAME.pdf
+
+7. COMMON ISSUES AND FIXES
+--------------------------
+- Incorrect parsing of <rdf:resource> element: you must extract the 'rdf:resource' **attribute**, not its text content.
+- PDF links are NOT embedded in the main item body—they are referenced externally via <link:link rdf:resource=...>.
+- Use namespaces consistently to avoid missing fields.
+- Handle multiple authors and multiple attachments per item.
+
+This understanding has been tested on real Zotero RDF exports and confirmed to work on both short and long samples.
+
+END OF DOCUMENT
+
+
+PhD Project: Zotero Notes Extraction from RDF
+
+Objective:
+-----------
+Extract Zotero annotations (notes) from a Zotero RDF export. These annotations are embedded in <bib:Memo> elements and are linked to bibliographic items (e.g., <bib:Article>) via the <dcterms:isReferencedBy> tag.
+
+Summary of Procedure:
+-----------------------
+1. **Identify Items with Notes**:
+   - Items (e.g., <bib:Article>) that reference a note contain a tag:
+     <dcterms:isReferencedBy rdf:resource="#item_NNNN"/>
+   - The resource value "#item_NNNN" points to a <bib:Memo rdf:about="#item_NNNN"> element.
+
+2. **Extract Note Content**:
+   - The content of the note is found inside the <rdf:value> tag of the <bib:Memo> element.
+   - This content is in HTML format and needs to be converted into plain text using an HTML parser.
+
+3. **Extract Item Metadata**:
+   - Title: <dc:title>
+   - Author: composed of <foaf:givenName> and <foaf:surname> inside <foaf:Person>
+   - Year: <dc:date>
+
+4. **Combine Note with Metadata**:
+   - Match each note with the item that references it.
+   - Store the output in a structured text file with the following format:
+     ```
+     ==== BEGIN NOTE 1 ====
+     Title: ...
+     Author: ...
+     Year: ...
+     [Note content in plain text]
+     ```git remote set-url origin
+
+Namespace Setup:
+------------------
+To correctly parse the RDF file, register all the necessary namespaces:
+- rdf, z, dc, vcard, foaf, bib, dcterms, prism, link
+
+Common Bugs Encountered:
+--------------------------
+1. **Wrong File Path or Name**:
+   - Initial attempts failed because the RDF file path inside the zip archive was incorrect.
+   - RESOLUTION: Used Python’s `zipfile` module to extract and manually inspect the contents with `os.walk()` to locate the correct RDF file.
+
+2. **Failure to Match RDF Elements**:
+   - Using ElementTree's `find()` and `findall()` without namespaces failed to match elements.
+   - RESOLUTION: Explicitly defined all namespaces and used the `namespaces=ns` argument.
+
+3. **HTML Content Not Properly Parsed**:
+   - Notes were stored as raw HTML inside <rdf:value> and not human-readable.
+   - RESOLUTION: Used `BeautifulSoup` to convert HTML to plain text with line breaks preserved.
+
+4. **File Encoding Issues**:
+   - Output text files had encoding artifacts.
+   - RESOLUTION: Opened and saved files using UTF-8 encoding explicitly.
+
+Outcome:
+----------
+A reliable script now extracts annotations from Zotero RDF exports into a plain-text file, preserving structure and metadata.
+
+File Produced:
+---------------
+- `PhD_Zotero_Notes_Extracted.txt`: contains extracted notes with full metadata.
+
+This document should be used in conjunction with:
+- `PhD_Mini_Corpora_Project_Specs.txt`: for global project description
+- `PhD_RDF_Structure_and_Extraction_Rules.txt`: for detailed RDF mapping
+
